@@ -28,7 +28,7 @@ def initialize(*args)
   @sub_resources = []
 end
 
-actions :deploy, :force_deploy
+actions :deploy, :force_deploy, :restart
 
 attribute :name, :kind_of => String, :name_attribute => true
 attribute :environment_name, :kind_of => String, :default => (node.chef_environment =~ /_default/ ? "production" : node.chef_environment)
@@ -80,6 +80,15 @@ end
 def after_restart(arg=nil, &block)
   arg ||= block
   set_or_return(:after_restart, arg, :kind_of => [Proc, String])
+end
+
+def all_environments
+  @all_environments ||= begin
+    envs = [environment] + sub_resources.map { |res| res.environment }
+    envs.inject({}) do |acc, val|
+      acc.merge(val)
+    end
+  end
 end
 
 def method_missing(name, *args, &block)

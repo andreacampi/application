@@ -128,26 +128,12 @@ def run_deploy(force = false)
     deploy_to new_resource.path
     ssh_wrapper "#{new_resource.path}/deploy-ssh-wrapper" if new_resource.deploy_key
     shallow_clone true
-    all_environments = ([new_resource.environment]+new_resource.sub_resources.map{|res| res.environment}).inject({}){|acc, val| acc.merge(val)}
-    environment all_environments
+    environment new_resource.all_environments
     migrate new_resource.migrate
     all_migration_commands = ([new_resource.migration_command]+new_resource.sub_resources.map{|res| res.migration_command}).select{|cmd| cmd && !cmd.empty?}
     migration_command all_migration_commands.join(' && ')
     restart_command do
-      ([new_resource]+new_resource.sub_resources).each do |res|
-        cmd = res.restart_command
-        if cmd.is_a? Proc
-          provider = Chef::Platform.provider_for_resource(res)
-          provider.load_current_resource
-          provider.instance_eval(&cmd)
-        elsif cmd && !cmd.empty?
-          execute cmd do
-            user new_resource.owner
-            group new_resource.group
-            environment all_environments
-          end
-        end
-      end
+      app_provider.send(:run_restart)
     end
     purge_before_symlink new_resource.purge_before_symlink
     create_dirs_before_symlink new_resource.create_dirs_before_symlink
@@ -169,12 +155,33 @@ def run_deploy(force = false)
   end
 end
 
+def run_restart
+  ([new_resource]+new_resource.sub_resources).each do |res|
+    cmd = res.restart_command
+    if cmd.is_a? Proc
+      provider = Chef::Platform.provider_for_resource(res)
+      provider.load_current_resource
+      provider.instance_eval(&cmd)
+    elsif cmd && !cmd.empty?
+      execute cmd do
+        user new_resource.owner
+        group new_resource.group
+        environment new_resource.all_environments
+      end
+    end
+  end
+end
+
 def run_actions_with_context(action, context)
   new_resource.sub_resources.each do |resource|
     saved_run_context = resource.instance_variable_get :@run_context
-    resource.instance_variable_set :@run_context, context
-    resource.run_action action
-    resource.instance_variable_set :@run_context, saved_run_context
+    if context == saved_run_context
+      resource.run_action action
+    else
+      resource.instance_variable_set :@run_context, context
+      resource.run_action action
+      resource.instance_variable_set :@run_context, saved_run_context
+    end
   end
   callback(action, new_resource.send(action))
 end
