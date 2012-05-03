@@ -163,11 +163,12 @@ def run_restart
       provider.load_current_resource
       provider.instance_eval(&cmd)
     elsif cmd && !cmd.empty?
-      execute cmd do
+      t = execute cmd do
         user new_resource.owner
         group new_resource.group
         environment new_resource.all_environments
       end
+      t.run_action(:run)
     end
   end
 end
